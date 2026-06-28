@@ -9,7 +9,7 @@ authors = [{ name = "skcool233" }]
 keywords = ["testing", "qa", "test-automation", "llm", "claude", "ai"]
 
 dependencies = [
-    "anthropic>=0.40",
+    "openai>=1.40",
     "typer>=0.12",
     "rich>=13.0",
     "pydantic>=2.0",
