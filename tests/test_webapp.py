@@ -1,0 +1,99 @@
+"""Web 接口单测——打桩 Copilot，不触网。"""
+
+import importlib
+
+import pytest
+from fastapi.testclient import TestClient
+
+from ai_test_copilot import webapp
+from ai_test_copilot.models import (
+    CaseType,
+    FailureAnalysis,
+    FailureCategory,
+    Priority,
+    TestCase,
+    TestPlan,
+)
+
+
+class _FakeCopilot:
+    def __init__(self, *a, **k):
+        pass
+
+    def generate_tests(self, spec):
+        return TestPlan(
+            feature="demo",
+            summary="s",
+            test_cases=[
+                TestCase(
+                    id="TC-001",
+                    title="t",
+                    type=CaseType.functional,
+                    priority=Priority.P0,
+                    steps=["s"],
+                    expected_result="r",
+                )
+            ],
+        )
+
+    def analyze_failure(self, log):
+        return FailureAnalysis(
+            summary="并发未加锁",
+            category=FailureCategory.product_bug,
+            root_cause="rc",
+            suggested_fixes=["加行锁"],
+            confidence=0.9,
+        )
+
+
+@pytest.fixture
+def client(monkeypatch):
+    monkeypatch.setattr(webapp, "Copilot", _FakeCopilot)
+    return TestClient(webapp.app)
+
+
+def test_healthz(client):
+    r = client.get("/healthz")
+    assert r.status_code == 200
+    assert r.json()["ok"] is True
+
+
+def test_index_served(client):
+    r = client.get("/")
+    assert r.status_code == 200
+    assert "AI 测试助手" in r.text
+
+
+def test_generate(client):
+    r = client.post("/api/generate", json={"text": "登录功能"})
+    assert r.status_code == 200
+    assert r.json()["test_cases"][0]["id"] == "TC-001"
+
+
+def test_analyze(client):
+    r = client.post("/api/analyze", json={"text": "并发日志"})
+    assert r.status_code == 200
+    assert r.json()["category"] == "product_bug"
+
+
+def test_empty_input_rejected(client):
+    r = client.post("/api/generate", json={"text": "  "})
+    assert r.status_code == 400
+
+
+def test_password_gate(monkeypatch):
+    # 设置了密码：缺密码 401，带对密码 200
+    monkeypatch.setattr(webapp, "Copilot", _FakeCopilot)
+    monkeypatch.setattr(webapp, "APP_PASSWORD", "secret")
+    c = TestClient(webapp.app)
+
+    assert c.post("/api/generate", json={"text": "x"}).status_code == 401
+    ok = c.post(
+        "/api/generate", json={"text": "x"}, headers={"X-App-Password": "secret"}
+    )
+    assert ok.status_code == 200
+
+
+def test_module_reimport_smoke():
+    # 确保模块可被重新导入（部署时 uvicorn --reload 不会崩）
+    importlib.reload(webapp)

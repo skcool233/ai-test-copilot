@@ -1,0 +1,14 @@
+[Unit]
+Description=AI Test Copilot web service
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/ai-test-copilot
+EnvironmentFile=/etc/ai-test-copilot.env
+ExecStart=/opt/ai-test-copilot/.venv/bin/uvicorn ai_test_copilot.webapp:app --host 0.0.0.0 --port ${PORT}
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

@@ -16,7 +16,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "ruff>=0.6"]
+web = ["fastapi>=0.110", "uvicorn[standard]>=0.27"]
+dev = ["pytest>=8.0", "ruff>=0.6", "fastapi>=0.110", "httpx>=0.27"]
 
 [project.scripts]
 ai-test-copilot = "ai_test_copilot.cli:app"
@@ -27,6 +28,9 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+ai_test_copilot = ["static/*.html"]
 
 [tool.ruff]
 line-length = 100

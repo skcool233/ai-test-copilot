@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AI 测试助手</title>
+<style>
+  :root { --bg:#0f1117; --card:#1a1d27; --line:#2a2e3a; --fg:#e6e8ee; --dim:#9aa0ac; --accent:#5b8cff; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.6 -apple-system,Segoe UI,Roboto,"PingFang SC",sans-serif; }
+  header { padding:20px 24px; border-bottom:1px solid var(--line); }
+  header h1 { margin:0; font-size:18px; }
+  header p { margin:4px 0 0; color:var(--dim); font-size:13px; }
+  main { max-width:960px; margin:0 auto; padding:24px; }
+  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:12px; }
+  .seg button { background:var(--card); color:var(--fg); border:1px solid var(--line); padding:7px 16px; cursor:pointer; }
+  .seg button:first-child { border-radius:8px 0 0 8px; }
+  .seg button:last-child { border-radius:0 8px 8px 0; border-left:none; }
+  .seg button.on { background:var(--accent); border-color:var(--accent); color:#fff; }
+  textarea { width:100%; min-height:200px; background:var(--card); color:var(--fg); border:1px solid var(--line); border-radius:8px; padding:12px; font:13px/1.5 ui-monospace,Menlo,Consolas,monospace; resize:vertical; }
+  input[type=password] { background:var(--card); color:var(--fg); border:1px solid var(--line); border-radius:8px; padding:7px 10px; }
+  .go { background:var(--accent); color:#fff; border:none; border-radius:8px; padding:9px 22px; cursor:pointer; font-size:15px; }
+  .go:disabled { opacity:.5; cursor:default; }
+  .dim { color:var(--dim); font-size:13px; }
+  #out { margin-top:20px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; margin-bottom:14px; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th,td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--dim); font-weight:600; }
+  .tag { display:inline-block; padding:1px 8px; border-radius:999px; font-size:12px; border:1px solid var(--line); }
+  .err { color:#ff6b6b; }
+  ul { margin:6px 0; padding-left:20px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>AI 测试助手</h1>
+  <p>从需求生成测试用例 · 从失败日志定位根因 — 基于 Claude</p>
+</header>
+<main>
+  <div class="row">
+    <div class="seg">
+      <button id="m-generate" class="on" onclick="setMode('generate')">生成用例</button>
+      <button id="m-analyze" onclick="setMode('analyze')">分析失败</button>
+    </div>
+    <input type="password" id="pw" placeholder="访问密码（如已设置）" />
+  </div>
+  <textarea id="input" placeholder="粘贴需求/接口描述 或 测试失败日志…"></textarea>
+  <div class="row" style="margin-top:12px;">
+    <button class="go" id="go" onclick="run()">运行</button>
+    <span class="dim" id="status"></span>
+  </div>
+  <div id="out"></div>
+</main>
+<script>
+let mode = "generate";
+function setMode(m){
+  mode = m;
+  document.getElementById("m-generate").classList.toggle("on", m==="generate");
+  document.getElementById("m-analyze").classList.toggle("on", m==="analyze");
+  document.getElementById("input").placeholder =
+    m==="generate" ? "粘贴需求/接口描述…" : "粘贴测试失败日志…";
+}
+// 记住密码，省得每次输
+const pwBox = document.getElementById("pw");
+pwBox.value = localStorage.getItem("app_pw") || "";
+pwBox.addEventListener("input", () => localStorage.setItem("app_pw", pwBox.value));
+
+const esc = s => String(s).replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+
+async function run(){
+  const text = document.getElementById("input").value.trim();
+  const out = document.getElementById("out");
+  const status = document.getElementById("status");
+  const btn = document.getElementById("go");
+  if(!text){ out.innerHTML = '<p class="err">请输入内容</p>'; return; }
+  btn.disabled = true; status.textContent = "Claude 思考中…"; out.innerHTML = "";
+  try {
+    const resp = await fetch("/api/" + mode, {
+      method:"POST",
+      headers:{ "Content-Type":"application/json", "X-App-Password": pwBox.value },
+      body: JSON.stringify({ text })
+    });
+    const data = await resp.json();
+    if(!resp.ok){ out.innerHTML = `<p class="err">${esc(data.detail||resp.status)}</p>`; return; }
+    out.innerHTML = mode==="generate" ? renderPlan(data) : renderAnalysis(data);
+  } catch(e){
+    out.innerHTML = `<p class="err">请求失败：${esc(e.message)}</p>`;
+  } finally {
+    btn.disabled = false; status.textContent = "";
+  }
+}
+
+function renderPlan(p){
+  const rows = p.test_cases.map(tc => `<tr>
+    <td>${esc(tc.id)}</td>
+    <td><span class="tag">${esc(tc.type)}</span></td>
+    <td>${esc(tc.priority)}</td>
+    <td>${esc(tc.title)}<div class="dim">步骤：${tc.steps.map(esc).join(" → ")}</div></td>
+    <td>${esc(tc.expected_result)}</td></tr>`).join("");
+  return `<div class="card"><b>${esc(p.feature)}</b><div class="dim">${esc(p.summary)}</div></div>
+    <div class="card"><table>
+    <tr><th>编号</th><th>类型</th><th>优先级</th><th>标题 / 步骤</th><th>预期结果</th></tr>
+    ${rows}</table><div class="dim" style="margin-top:8px;">共 ${p.test_cases.length} 条用例</div></div>`;
+}
+
+function renderAnalysis(a){
+  return `<div class="card">
+    <b>${esc(a.summary)}</b>
+    <div class="dim" style="margin-top:6px;">归类：<span class="tag">${esc(a.category)}</span>　置信度：${Math.round(a.confidence*100)}%</div>
+    <p><b>根因</b><br>${esc(a.root_cause)}</p>
+    ${a.evidence?.length ? `<p><b>关键证据</b></p><ul>${a.evidence.map(e=>`<li>${esc(e)}</li>`).join("")}</ul>` : ""}
+    <p><b>修复建议</b></p><ul>${a.suggested_fixes.map(f=>`<li>${esc(f)}</li>`).join("")}</ul>
+  </div>`;
+}
+</script>
+</body>
+</html>

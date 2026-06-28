@@ -59,6 +59,45 @@ cat examples/sample_failure.log | ai-test-copilot analyze -
 └────────┴───────────┴────────┴─────────────────────────┘
 ```
 
+## Web 服务
+
+除了 CLI，还提供一个 FastAPI 网页版（接口 + 浏览器页面）：
+
+```bash
+pip install -e ".[web]"
+export ANTHROPIC_API_KEY=sk-ant-xxxx
+# 可选：设置访问密码，保护按量计费的 API key 不被滥用
+export APP_PASSWORD=your-pass
+uvicorn ai_test_copilot.webapp:app --host 0.0.0.0 --port 8000
+```
+
+打开 `http://<服务器IP>:8000`，粘贴需求或失败日志即可。接口：
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET  | `/healthz` | 健康检查 |
+| POST | `/api/generate` | `{"text": "..."}` → 测试计划 JSON |
+| POST | `/api/analyze` | `{"text": "..."}` → 失败分析 JSON |
+
+设置了 `APP_PASSWORD` 后，`/api/*` 需带请求头 `X-App-Password`。
+
+## 部署（systemd）
+
+`deploy/` 下提供了 systemd 单元和幂等安装脚本，适合部署到一台云服务器：
+
+```bash
+# 代码放到 /opt/ai-test-copilot 后，在服务器上：
+sudo tee /etc/ai-test-copilot.env >/dev/null <<'EOF'
+ANTHROPIC_API_KEY=sk-ant-xxxx
+APP_PASSWORD=your-pass
+PORT=8000
+EOF
+sudo bash /opt/ai-test-copilot/deploy/server-setup.sh
+```
+
+脚本会建 venv、装依赖、装并启动 `ai-test-copilot` systemd 服务（开机自启、崩溃重启）。
+记得在云厂商**安全组放行对应端口**。
+
 ## 设计要点
 
 - **结构化输出**：`models.py` 用 Pydantic 定义 `TestPlan` / `FailureAnalysis`，
