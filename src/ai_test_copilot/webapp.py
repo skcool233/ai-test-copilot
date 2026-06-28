@@ -15,6 +15,7 @@ from pydantic import BaseModel
 
 from . import __version__
 from .client import Copilot, CopilotError
+from .feishu import FeishuError, fetch_doc_text
 
 # 若设置了 APP_PASSWORD，则所有 /api 调用都需带上正确密码（保护按量计费的 API key）。
 APP_PASSWORD = os.environ.get("APP_PASSWORD") or None
@@ -24,6 +25,10 @@ app = FastAPI(title="ai-test-copilot", version=__version__)
 
 class TextIn(BaseModel):
     text: str
+
+
+class UrlIn(BaseModel):
+    url: str
 
 
 def _check_password(provided: str | None) -> None:
@@ -39,7 +44,25 @@ def _require_text(text: str) -> str:
 
 @app.get("/healthz")
 def healthz() -> dict:
-    return {"ok": True, "version": __version__, "auth_required": bool(APP_PASSWORD)}
+    return {
+        "ok": True,
+        "version": __version__,
+        "auth_required": bool(APP_PASSWORD),
+        "feishu_configured": bool(os.environ.get("FEISHU_APP_ID") and os.environ.get("FEISHU_APP_SECRET")),
+    }
+
+
+@app.post("/api/feishu/fetch")
+def api_feishu_fetch(body: UrlIn, x_app_password: str | None = Header(default=None)) -> dict:
+    """拉取飞书文档正文，返回纯文本（前端再填入输入框走生成/分析）。"""
+    _check_password(x_app_password)
+    if not body.url.strip():
+        raise HTTPException(status_code=400, detail="链接为空")
+    try:
+        text = fetch_doc_text(body.url.strip())
+    except FeishuError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"text": text, "chars": len(text)}
 
 
 @app.post("/api/generate")

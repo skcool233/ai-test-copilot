@@ -94,6 +94,26 @@ def test_password_gate(monkeypatch):
     assert ok.status_code == 200
 
 
+def test_feishu_fetch(client, monkeypatch):
+    monkeypatch.setattr(webapp, "fetch_doc_text", lambda url: "需求正文 from " + url)
+    r = client.post("/api/feishu/fetch", json={"url": "https://x.feishu.cn/docx/Abc123"})
+    assert r.status_code == 200
+    assert r.json()["text"].startswith("需求正文")
+    assert r.json()["chars"] > 0
+
+
+def test_feishu_fetch_error(client, monkeypatch):
+    def boom(url):
+        from ai_test_copilot.feishu import FeishuError
+
+        raise FeishuError("无权限")
+
+    monkeypatch.setattr(webapp, "fetch_doc_text", boom)
+    r = client.post("/api/feishu/fetch", json={"url": "https://x.feishu.cn/docx/Abc123"})
+    assert r.status_code == 400
+    assert "无权限" in r.json()["detail"]
+
+
 def test_module_reimport_smoke():
     # 确保模块可被重新导入（部署时 uvicorn --reload 不会崩）
     importlib.reload(webapp)

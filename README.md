@@ -87,6 +87,19 @@ uvicorn ai_test_copilot.webapp:app --host 0.0.0.0 --port 8000
 
 设置了 `APP_PASSWORD` 后，`/api/*` 需带请求头 `X-App-Password`。
 
+### 飞书文档读取（可选）
+
+配置企业自建应用的 `FEISHU_APP_ID` / `FEISHU_APP_SECRET` 后，页面顶部可粘贴飞书
+文档链接（`/docx/` 新版文档或 `/wiki/` 知识库）一键拉取正文，再走生成/分析。
+
+```bash
+export FEISHU_APP_ID=cli_xxxx
+export FEISHU_APP_SECRET=xxxx
+```
+
+应用需开通 `docx:document:readonly`（读知识库再加 `wiki:wiki:readonly`），
+且目标文档已分享给该应用。对应接口 `POST /api/feishu/fetch` `{"url": "..."}` → `{"text": "..."}`。
+
 ## 部署（systemd）
 
 `deploy/` 下提供了 systemd 单元和幂等安装脚本，适合部署到一台云服务器：
