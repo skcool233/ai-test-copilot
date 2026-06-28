@@ -207,11 +207,18 @@ def _fetch_bitable(url: str, app_token: str, token: str) -> str:
         raise FeishuError("多维表格内容为空，或无读取权限")
 
     lines: list[str] = []
+    field_lines = 0
     for i, rec in enumerate(items, 1):
         lines.append(f"# 记录 {i}")
         for key, val in (rec.get("fields") or {}).items():
             lines.append(f"{key}: {_flatten(val)}")
+            field_lines += 1
         lines.append("")
+    if field_lines == 0:
+        raise FeishuError(
+            f"读到 {len(items)} 条记录但字段值为空——可能是空表，"
+            "或该多维表格开启了「高级权限」导致 API 读不到内容（需关闭高级权限或换一张表）"
+        )
     return "\n".join(lines).strip()
 
 
