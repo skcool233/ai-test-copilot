@@ -1,0 +1,39 @@
+[project]
+name = "ai-test-copilot"
+version = "0.1.0"
+description = "AI 测试助手 CLI：用 Claude 从需求生成测试用例、分析失败日志定位根因"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "skcool233" }]
+keywords = ["testing", "qa", "test-automation", "llm", "claude", "ai"]
+
+dependencies = [
+    "anthropic>=0.40",
+    "typer>=0.12",
+    "rich>=13.0",
+    "pydantic>=2.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "ruff>=0.6"]
+
+[project.scripts]
+ai-test-copilot = "ai_test_copilot.cli:app"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+# 只收集 test_ 开头的函数；避免把领域模型 TestPlan/TestCase 误当测试类。
+python_classes = []

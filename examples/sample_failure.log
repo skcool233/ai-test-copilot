@@ -1,0 +1,18 @@
+=================================== FAILURES ===================================
+______________________ test_redeem_coupon_concurrent __________________________
+
+    def test_redeem_coupon_concurrent():
+        # 同一用户并发核销同一张券
+        results = run_concurrently(redeem, times=10, code="ABC123", user_id="u1")
+        success = [r for r in results if r.status == 200]
+>       assert len(success) == 1, f"expected exactly 1 success, got {len(success)}"
+E       AssertionError: expected exactly 1 success, got 3
+E       assert 3 == 1
+
+tests/test_coupon.py:88: AssertionError
+------------------------------- Captured log ----------------------------------
+INFO  coupon.service  redeem code=ABC123 user=u1 -> OK (no row lock acquired)
+INFO  coupon.service  redeem code=ABC123 user=u1 -> OK (no row lock acquired)
+INFO  coupon.service  redeem code=ABC123 user=u1 -> OK (no row lock acquired)
+=========================== short test summary info ============================
+FAILED tests/test_coupon.py::test_redeem_coupon_concurrent - AssertionError
