@@ -82,6 +82,7 @@
 
     <div class="feishu" id="feishu-row">
       <input type="text" id="feishu-url" placeholder="粘贴飞书文档链接（/docx/ 或 /wiki/）自动拉取正文…" />
+      <button class="ghost" id="feishu-login" onclick="window.open('/feishu/login','_blank')" style="display:none">🔑 登录飞书</button>
       <button class="ghost" id="fetch-btn" onclick="fetchFeishu()">📄 拉取飞书文档</button>
     </div>
 
@@ -123,14 +124,28 @@ function updateCount(){ const n=$("input").value.length; $("charcount").textCont
 function toast(msg){ const t=$("toast"); t.textContent=msg; t.classList.add("show"); setTimeout(()=>t.classList.remove("show"),1800); }
 function headers(){ return {"Content-Type":"application/json","X-App-Password":pwBox.value}; }
 
-// 启动时探测后端能力
-fetch("/healthz").then(r=>r.json()).then(d=>{
-  const parts = ["版本 "+d.version];
-  parts.push(d.feishu_configured ? "飞书 ✓" : "飞书未配置");
-  parts.push(d.auth_required ? "需密码" : "无需密码");
-  $("status-line").textContent = parts.join("　·　");
-  if(!d.feishu_configured){ $("feishu-url").placeholder="飞书未配置（服务器需设 FEISHU_APP_ID/SECRET）"; }
-}).catch(()=>{ $("status-line").textContent="无法连接后端"; });
+// 探测后端能力 + 飞书授权状态（切回标签页时自动刷新）
+function refreshStatus(){
+  fetch("/healthz").then(r=>r.json()).then(d=>{
+    const parts = ["版本 "+d.version];
+    parts.push(!d.feishu_configured ? "飞书未配置" : d.feishu_authorized ? "飞书已授权 ✓" : "飞书未登录");
+    parts.push(d.auth_required ? "需密码" : "无需密码");
+    $("status-line").textContent = parts.join("　·　");
+    const login = $("feishu-login"), fetchBtn = $("fetch-btn"), urlBox = $("feishu-url");
+    if(!d.feishu_configured){
+      urlBox.disabled = fetchBtn.disabled = true; login.style.display="none";
+      urlBox.placeholder = "飞书未配置（服务器需设 FEISHU_APP_ID/SECRET）";
+    }else if(!d.feishu_authorized){
+      urlBox.disabled = false; fetchBtn.disabled = true; login.style.display="";
+      urlBox.placeholder = "先点「登录飞书」授权一次，再粘贴文档链接…";
+    }else{
+      urlBox.disabled = fetchBtn.disabled = false; login.style.display="none";
+      urlBox.placeholder = "粘贴飞书文档链接（/docx/ 或 /wiki/）自动拉取正文…";
+    }
+  }).catch(()=>{ $("status-line").textContent="无法连接后端"; });
+}
+refreshStatus();
+window.addEventListener("focus", refreshStatus);  // 授权后切回本页自动更新
 
 async function fetchFeishu(){
   const url = $("feishu-url").value.trim();

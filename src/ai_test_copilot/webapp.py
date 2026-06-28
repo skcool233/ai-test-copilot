@@ -7,15 +7,20 @@
 from __future__ import annotations
 
 import os
+import secrets
 from importlib.resources import files
 
 from fastapi import FastAPI, Header, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 
 from . import __version__
+from . import feishu
 from .client import Copilot, CopilotError
 from .feishu import FeishuError, fetch_doc_text
+
+# OAuth state 校验（防 CSRF）。单用户个人工具，进程内存即可。
+_oauth_states: set[str] = set()
 
 # 若设置了 APP_PASSWORD，则所有 /api 调用都需带上正确密码（保护按量计费的 API key）。
 APP_PASSWORD = os.environ.get("APP_PASSWORD") or None
@@ -44,12 +49,51 @@ def _require_text(text: str) -> str:
 
 @app.get("/healthz")
 def healthz() -> dict:
+    configured = bool(os.environ.get("FEISHU_APP_ID") and os.environ.get("FEISHU_APP_SECRET"))
     return {
         "ok": True,
         "version": __version__,
         "auth_required": bool(APP_PASSWORD),
-        "feishu_configured": bool(os.environ.get("FEISHU_APP_ID") and os.environ.get("FEISHU_APP_SECRET")),
+        "feishu_configured": configured,
+        "feishu_authorized": configured and feishu.is_authorized(),
     }
+
+
+@app.get("/feishu/login")
+def feishu_login() -> RedirectResponse:
+    """跳转到飞书授权页（用户授权一次，之后自动续期）。"""
+    try:
+        state = secrets.token_urlsafe(16)
+        _oauth_states.add(state)
+        return RedirectResponse(feishu.authorize_url(state))
+    except FeishuError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/feishu/callback", response_class=HTMLResponse)
+def feishu_callback(code: str | None = None, state: str | None = None) -> str:
+    """飞书授权回调：用 code 换取并保存用户令牌。"""
+    if not code:
+        return _result_page("授权失败", "未拿到授权码（code）", ok=False)
+    if not state or state not in _oauth_states:
+        return _result_page("授权失败", "state 校验未通过，请重新发起登录", ok=False)
+    _oauth_states.discard(state)
+    try:
+        feishu.exchange_code(code)
+    except FeishuError as exc:
+        return _result_page("授权失败", str(exc), ok=False)
+    return _result_page("✅ 飞书授权成功", "现在可以关闭本页，回到工具粘贴文档链接拉取。", ok=True)
+
+
+def _result_page(title: str, msg: str, *, ok: bool) -> str:
+    color = "#3fb950" if ok else "#f85149"
+    return (
+        f"<!doctype html><meta charset=utf-8><title>{title}</title>"
+        "<body style='background:#0e1016;color:#e8eaf0;font-family:-apple-system,sans-serif;"
+        "display:grid;place-items:center;height:100vh;margin:0'>"
+        f"<div style='text-align:center'><h2 style='color:{color}'>{title}</h2>"
+        f"<p style='color:#9aa3b5'>{msg}</p></div></body>"
+    )
 
 
 @app.post("/api/feishu/fetch")
