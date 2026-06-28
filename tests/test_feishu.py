@@ -19,6 +19,13 @@ def test_parse_wiki_url():
     )
 
 
+def test_parse_base_url():
+    assert parse_url("https://x.feishu.cn/base/Bs1appToken?table=tbl9") == (
+        "base",
+        "Bs1appToken",
+    )
+
+
 def test_parse_invalid_url():
     with pytest.raises(FeishuError):
         parse_url("https://example.com/not-a-feishu-doc")

@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import os
+import re
 import secrets
 from importlib.resources import files
 
@@ -18,6 +19,8 @@ from . import __version__
 from . import feishu
 from .client import Copilot, CopilotError
 from .feishu import FeishuError, fetch_doc_text
+from .models import TestPlan
+from .pytest_export import plan_to_pytest, slug_filename
 
 # OAuth state 校验（防 CSRF）。单用户个人工具，进程内存即可。
 _oauth_states: set[str] = set()
@@ -98,15 +101,33 @@ def _result_page(title: str, msg: str, *, ok: bool) -> str:
 
 @app.post("/api/feishu/fetch")
 def api_feishu_fetch(body: UrlIn, x_app_password: str | None = Header(default=None)) -> dict:
-    """拉取飞书文档正文，返回纯文本（前端再填入输入框走生成/分析）。"""
+    """拉取飞书文档/多维表格正文，返回纯文本。支持多链接（空白/换行分隔）批量。"""
     _check_password(x_app_password)
-    if not body.url.strip():
+    links = [u for u in re.split(r"\s+", body.url.strip()) if u]
+    if not links:
         raise HTTPException(status_code=400, detail="链接为空")
+    parts, errors = [], []
+    for u in links:
+        try:
+            t = fetch_doc_text(u)
+            parts.append(t if len(links) == 1 else f"===== {u} =====\n\n{t}")
+        except FeishuError as exc:
+            errors.append(f"{u} → {exc}")
+    if not parts:
+        raise HTTPException(status_code=400, detail="；".join(errors) or "拉取失败")
+    text = "\n\n".join(parts)
+    return {"text": text, "chars": len(text), "count": len(parts), "errors": errors}
+
+
+@app.post("/api/to-pytest")
+def api_to_pytest(body: dict, x_app_password: str | None = Header(default=None)) -> dict:
+    """把生成的测试计划 JSON 转成 pytest 骨架代码。"""
+    _check_password(x_app_password)
     try:
-        text = fetch_doc_text(body.url.strip())
-    except FeishuError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"text": text, "chars": len(text)}
+        plan = TestPlan.model_validate(body)
+    except Exception as exc:  # noqa: BLE001 - 统一回 400
+        raise HTTPException(status_code=400, detail=f"测试计划格式不对：{exc}") from exc
+    return {"code": plan_to_pytest(plan), "filename": slug_filename(plan.feature)}
 
 
 @app.post("/api/generate")

@@ -114,6 +114,44 @@ def test_feishu_fetch_error(client, monkeypatch):
     assert "无权限" in r.json()["detail"]
 
 
+def test_feishu_batch_fetch(client, monkeypatch):
+    monkeypatch.setattr(webapp, "fetch_doc_text", lambda url: "正文:" + url[-3:])
+    r = client.post(
+        "/api/feishu/fetch",
+        json={"url": "https://x.feishu.cn/docx/aaa\nhttps://x.feishu.cn/wiki/bbb"},
+    )
+    assert r.status_code == 200
+    assert r.json()["count"] == 2
+    assert "=====" in r.json()["text"]  # 多链接会带分隔标题
+
+
+def test_to_pytest_endpoint(client):
+    plan = {
+        "feature": "登录",
+        "summary": "s",
+        "test_cases": [
+            {
+                "id": "TC-001",
+                "title": "t",
+                "type": "functional",
+                "priority": "P0",
+                "preconditions": [],
+                "steps": ["s"],
+                "expected_result": "r",
+            }
+        ],
+    }
+    r = client.post("/api/to-pytest", json=plan)
+    assert r.status_code == 200
+    assert "import pytest" in r.json()["code"]
+    assert r.json()["filename"].endswith(".py")
+
+
+def test_to_pytest_bad_plan(client):
+    r = client.post("/api/to-pytest", json={"feature": "x"})  # 缺 test_cases
+    assert r.status_code == 400
+
+
 def test_module_reimport_smoke():
     # 确保模块可被重新导入（部署时 uvicorn --reload 不会崩）
     importlib.reload(webapp)

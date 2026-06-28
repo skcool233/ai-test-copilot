@@ -15,7 +15,7 @@ import os
 import re
 import time
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import parse_qs, quote, urlparse
 
 import httpx
 
@@ -23,8 +23,10 @@ FEISHU_BASE = os.environ.get("FEISHU_BASE", "https://open.feishu.cn")
 FEISHU_ACCOUNTS_BASE = os.environ.get("FEISHU_ACCOUNTS_BASE", "https://accounts.feishu.cn")
 # 需要 offline_access 才会下发 refresh_token（用于自动续期）。
 SCOPE = os.environ.get(
-    "FEISHU_SCOPE", "docx:document:readonly wiki:wiki:readonly offline_access"
+    "FEISHU_SCOPE",
+    "docx:document:readonly wiki:wiki:readonly bitable:app:readonly offline_access",
 )
+_BITABLE_MAX_RECORDS = 100
 _TIMEOUT = 20.0
 
 
@@ -169,11 +171,48 @@ def _user_token() -> str:
 # ---------- 文档读取 ----------
 
 def parse_url(url: str) -> tuple[str, str]:
-    """从飞书链接解析出 (类型, token)，类型 ∈ {docx, wiki, docs}。"""
-    m = re.search(r"/(docx|wiki|docs)/([A-Za-z0-9]+)", url)
+    """从飞书链接解析出 (类型, token)，类型 ∈ {docx, wiki, docs, base}。"""
+    m = re.search(r"/(docx|wiki|docs|base)/([A-Za-z0-9]+)", url)
     if not m:
-        raise FeishuError("无法识别的飞书文档链接（需含 /docx/ 或 /wiki/）")
+        raise FeishuError("无法识别的飞书链接（需含 /docx/、/wiki/ 或 /base/）")
     return m.group(1), m.group(2)
+
+
+def _flatten(value) -> str:
+    """把多维表格的字段值压成可读字符串。"""
+    if isinstance(value, list):
+        return " ".join(_flatten(v) for v in value)
+    if isinstance(value, dict):
+        return str(value.get("text") or value.get("name") or json.dumps(value, ensure_ascii=False))
+    return str(value)
+
+
+def _fetch_bitable(url: str, app_token: str, token: str) -> str:
+    """读取多维表格（Bitable）记录，转成文本。"""
+    table_id = (parse_qs(urlparse(url).query).get("table") or [None])[0]
+    if not table_id:
+        tables = _api_get(f"/open-apis/bitable/v1/apps/{app_token}/tables", token, {"page_size": 1})
+        items = tables.get("items") or []
+        if not items:
+            raise FeishuError("多维表格里没有数据表")
+        table_id = items[0]["table_id"]
+
+    recs = _api_get(
+        f"/open-apis/bitable/v1/apps/{app_token}/tables/{table_id}/records",
+        token,
+        {"page_size": _BITABLE_MAX_RECORDS},
+    )
+    items = recs.get("items") or []
+    if not items:
+        raise FeishuError("多维表格内容为空，或无读取权限")
+
+    lines: list[str] = []
+    for i, rec in enumerate(items, 1):
+        lines.append(f"# 记录 {i}")
+        for key, val in (rec.get("fields") or {}).items():
+            lines.append(f"{key}: {_flatten(val)}")
+        lines.append("")
+    return "\n".join(lines).strip()
 
 
 def _api_get(path: str, token: str, params: dict | None = None) -> dict:
@@ -207,6 +246,8 @@ def fetch_doc_text(url: str) -> str:
     """给定飞书文档链接，用当前登录用户的权限读取其纯文本正文。"""
     token = _user_token()
     doc_type, tok = parse_url(url)
+    if doc_type == "base":
+        return _fetch_bitable(url, tok, token)
     if doc_type == "wiki":
         document_id = _resolve_wiki(tok, token)
     elif doc_type == "docx":

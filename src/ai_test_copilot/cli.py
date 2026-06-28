@@ -83,7 +83,8 @@ def _render_analysis(a: FailureAnalysis) -> None:
 @app.command()
 def generate(
     spec: str = typer.Argument(..., help="需求/接口描述文件路径，'-' 表示从 stdin 读取"),
-    json_out: bool = typer.Option(False, "--json", help="输出 JSON（便于落库/转 pytest 骨架）"),
+    json_out: bool = typer.Option(False, "--json", help="输出 JSON（便于落库）"),
+    to_pytest: bool = typer.Option(False, "--to-pytest", help="输出 pytest 用例骨架代码"),
     model: Optional[str] = typer.Option(None, "--model", help="覆盖默认模型"),
 ) -> None:
     """从需求/接口描述生成测试用例。"""
@@ -94,7 +95,12 @@ def generate(
         err_console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from exc
 
-    if json_out:
+    if to_pytest:
+        from .pytest_export import plan_to_pytest
+
+        # 直接打印纯代码，便于重定向保存为 .py
+        print(plan_to_pytest(plan))
+    elif json_out:
         console.print_json(plan.model_dump_json())
     else:
         _render_plan(plan)
