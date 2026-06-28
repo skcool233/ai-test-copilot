@@ -16,9 +16,9 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 
 from . import __version__
-from . import feishu
+from . import feishu, history
 from .client import Copilot, CopilotError
-from .feishu import FeishuError, fetch_doc_text
+from .feishu import FeishuError, create_doc_from_plan, fetch_doc_text
 from .models import TestPlan
 from .pytest_export import plan_to_pytest, slug_filename
 
@@ -130,14 +130,32 @@ def api_to_pytest(body: dict, x_app_password: str | None = Header(default=None))
     return {"code": plan_to_pytest(plan), "filename": slug_filename(plan.feature)}
 
 
+@app.post("/api/feishu/export")
+def api_feishu_export(body: dict, x_app_password: str | None = Header(default=None)) -> dict:
+    """把测试计划新建成一篇飞书文档，返回文档链接。"""
+    _check_password(x_app_password)
+    try:
+        plan = TestPlan.model_validate(body)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=f"测试计划格式不对：{exc}") from exc
+    try:
+        url = create_doc_from_plan(plan)
+    except FeishuError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"url": url}
+
+
 @app.post("/api/generate")
 def api_generate(body: TextIn, x_app_password: str | None = Header(default=None)) -> dict:
     _check_password(x_app_password)
     text = _require_text(body.text)
     try:
-        return Copilot().generate_tests(text).model_dump()
+        plan = Copilot().generate_tests(text)
     except CopilotError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+    result = plan.model_dump()
+    history.add("generate", plan.feature, text, result)
+    return result
 
 
 @app.post("/api/analyze")
@@ -145,9 +163,27 @@ def api_analyze(body: TextIn, x_app_password: str | None = Header(default=None))
     _check_password(x_app_password)
     text = _require_text(body.text)
     try:
-        return Copilot().analyze_failure(text).model_dump()
+        analysis = Copilot().analyze_failure(text)
     except CopilotError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+    result = analysis.model_dump()
+    history.add("analyze", analysis.summary, text, result)
+    return result
+
+
+@app.get("/api/history")
+def api_history(x_app_password: str | None = Header(default=None)) -> list[dict]:
+    _check_password(x_app_password)
+    return history.list_meta()
+
+
+@app.get("/api/history/{item_id}")
+def api_history_item(item_id: str, x_app_password: str | None = Header(default=None)) -> dict:
+    _check_password(x_app_password)
+    item = history.get(item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="记录不存在")
+    return item
 
 
 @app.get("/", response_class=HTMLResponse)

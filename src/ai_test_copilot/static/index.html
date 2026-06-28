@@ -18,7 +18,10 @@
         display:grid;place-items:center;font-size:19px}
   header h1{margin:0;font-size:18px;letter-spacing:.3px}
   header .sub{margin:2px 0 0;color:var(--dim);font-size:12.5px}
-  header .status{margin-left:auto;color:var(--dim);font-size:12px;text-align:right}
+  header .status{color:var(--dim);font-size:12px;text-align:right}
+  .hist-item{display:flex;gap:12px;align-items:center;padding:10px 11px;border-bottom:1px solid var(--line);cursor:pointer}
+  .hist-item:hover{background:var(--bg2)}
+  .hist-item:last-child{border-bottom:none}
   main{max-width:1000px;margin:0 auto;padding:24px}
   .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:16px;
         box-shadow:0 1px 0 rgba(255,255,255,.02) inset}
@@ -70,7 +73,10 @@
     <h1>AI 测试助手</h1>
     <div class="sub">从需求生成测试用例 · 从失败日志定位根因</div>
   </div>
-  <div class="status" id="status-line">连接中…</div>
+  <div style="margin-left:auto;display:flex;align-items:center;gap:14px">
+    <button class="ghost" onclick="showHistory()">🕘 历史</button>
+    <div class="status" id="status-line">连接中…</div>
+  </div>
 </header>
 
 <main>
@@ -197,6 +203,7 @@ function renderPlan(p){
     <tr><th>编号</th><th>类型</th><th>优先级</th><th>标题 / 步骤</th><th>预期结果</th></tr>${rows}</table>
     <div class="bar"><span class="dim">共 ${p.test_cases.length} 条用例</span>
     <button class="ghost" onclick="exportPytest()">⬇️ 导出 pytest</button>
+    <button class="ghost" onclick="exportFeishu()">📤 导出到飞书文档</button>
     <button class="ghost" onclick='copyJSON(${JSON.stringify(JSON.stringify(p))})'>复制 JSON</button></div>
   </div>`;
 }
@@ -229,7 +236,59 @@ function renderAnalysis(a){
   </div>`;
 }
 
-function copyJSON(s){ navigator.clipboard.writeText(s).then(()=>toast("已复制 JSON")); }
+function copyJSON(s){
+  // http(非安全上下文) 下 navigator.clipboard 不可用，降级到 execCommand
+  if(navigator.clipboard && window.isSecureContext){
+    navigator.clipboard.writeText(s).then(()=>toast("已复制 JSON")).catch(()=>fallbackCopy(s));
+  }else{ fallbackCopy(s); }
+}
+function fallbackCopy(s){
+  const ta=document.createElement("textarea");
+  ta.value=s; ta.style.position="fixed"; ta.style.top="-9999px";
+  document.body.appendChild(ta); ta.focus(); ta.select();
+  let ok=false; try{ ok=document.execCommand("copy"); }catch(e){}
+  ta.remove();
+  toast(ok ? "已复制 JSON" : "复制失败，请手动选择");
+}
+
+async function exportFeishu(){
+  if(!lastPlan){ toast("请先生成用例"); return; }
+  toast("正在新建飞书文档…");
+  try{
+    const resp = await fetch("/api/feishu/export",{method:"POST",headers:headers(),body:JSON.stringify(lastPlan)});
+    const data = await resp.json();
+    if(!resp.ok){ toast(data.detail||"导出失败"); return; }
+    window.open(data.url, "_blank");
+    toast("已导出到飞书文档");
+  }catch(e){ toast("导出失败："+e.message); }
+}
+
+function fmtTime(ts){ const d=new Date(ts*1000); const p=n=>String(n).padStart(2,"0");
+  return `${d.getMonth()+1}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; }
+
+async function showHistory(){
+  try{
+    const resp = await fetch("/api/history",{headers:headers()});
+    const list = await resp.json();
+    if(!resp.ok){ $("out").innerHTML=`<div class="card err">${esc(list.detail||"加载失败")}</div>`; return; }
+    if(!list.length){ $("out").innerHTML='<div class="card dim">暂无历史记录</div>'; return; }
+    const rows = list.map(it=>`<div class="hist-item" onclick="openHistory('${it.id}')">
+      <span class="tag">${it.mode==="generate"?"生成":"分析"}</span>
+      <span style="flex:1">${esc(it.title)}</span>
+      <span class="dim">${fmtTime(it.ts)}</span></div>`).join("");
+    $("out").innerHTML = `<div class="card"><b>历史记录</b><div class="dim" style="margin-bottom:6px">点击查看（最近 ${list.length} 条）</div>${rows}</div>`;
+  }catch(e){ toast("加载历史失败："+e.message); }
+}
+
+async function openHistory(id){
+  try{
+    const resp = await fetch("/api/history/"+id,{headers:headers()});
+    const it = await resp.json();
+    if(!resp.ok){ toast(it.detail||"打开失败"); return; }
+    setMode(it.mode); $("input").value = it.input || ""; updateCount();
+    $("out").innerHTML = it.mode==="generate" ? renderPlan(it.result) : renderAnalysis(it.result);
+  }catch(e){ toast("打开失败："+e.message); }
+}
 </script>
 </body>
 </html>

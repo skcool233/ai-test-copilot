@@ -21,11 +21,13 @@ import httpx
 
 FEISHU_BASE = os.environ.get("FEISHU_BASE", "https://open.feishu.cn")
 FEISHU_ACCOUNTS_BASE = os.environ.get("FEISHU_ACCOUNTS_BASE", "https://accounts.feishu.cn")
-# 需要 offline_access 才会下发 refresh_token（用于自动续期）。
+# docx:document 含读写（导出到飞书文档需要写）；offline_access 用于下发 refresh_token。
 SCOPE = os.environ.get(
     "FEISHU_SCOPE",
-    "docx:document:readonly wiki:wiki:readonly bitable:app:readonly offline_access",
+    "docx:document wiki:wiki:readonly bitable:app:readonly offline_access",
 )
+# 新建文档的链接域名（不同租户不同），用于拼可点击链接。
+FEISHU_DOC_HOST = os.environ.get("FEISHU_DOC_HOST", "feishu.cn")
 _BITABLE_MAX_RECORDS = 100
 _TIMEOUT = 20.0
 
@@ -269,3 +271,60 @@ def fetch_doc_text(url: str) -> str:
     if not content:
         raise FeishuError("文档内容为空")
     return content
+
+
+# ---------- 写：把测试计划导出为新建飞书文档 ----------
+
+def _api_post(path: str, token: str, body: dict) -> dict:
+    try:
+        r = httpx.post(
+            f"{FEISHU_BASE}{path}",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json; charset=utf-8",
+            },
+            json=body,
+            timeout=_TIMEOUT,
+        )
+        data = r.json()
+    except httpx.HTTPError as exc:
+        raise FeishuError(f"连接飞书失败：{exc}") from exc
+    if data.get("code") != 0:
+        msg = data.get("msg", "")
+        if "permission" in str(msg).lower() or data.get("code") in (99991672, 99991679):
+            msg += "（新建文档需 docx:document 写权限，请确认已开通并重新授权）"
+        raise FeishuError(f"飞书 API 错误：{msg}（code {data.get('code')}）")
+    return data["data"]
+
+
+def _block(content: str, btype: int = 2, key: str = "text") -> dict:
+    return {"block_type": btype, key: {"elements": [{"text_run": {"content": content}}]}}
+
+
+def _plan_blocks(plan) -> list[dict]:
+    blocks = [_block(plan.feature, 3, "heading1"), _block(plan.summary)]
+    for tc in plan.test_cases:
+        blocks.append(_block(f"{tc.id} [{tc.priority.value}/{tc.type.value}] {tc.title}", 4, "heading2"))
+        if tc.preconditions:
+            blocks.append(_block("前置条件：" + "；".join(tc.preconditions)))
+        blocks.append(_block("步骤：" + " → ".join(tc.steps)))
+        blocks.append(_block("预期：" + tc.expected_result))
+    return blocks
+
+
+def create_doc_from_plan(plan) -> str:
+    """新建一篇飞书文档，写入测试计划，返回文档链接。"""
+    token = _user_token()
+    doc = _api_post("/open-apis/docx/v1/documents", token, {"title": f"{plan.feature} 测试用例"})
+    doc_id = doc["document"]["document_id"]
+    blocks = _plan_blocks(plan)
+    idx = 0
+    for i in range(0, len(blocks), 40):  # 单次最多 ~50 个子块，分批
+        batch = blocks[i : i + 40]
+        _api_post(
+            f"/open-apis/docx/v1/documents/{doc_id}/blocks/{doc_id}/children",
+            token,
+            {"children": batch, "index": idx},
+        )
+        idx += len(batch)
+    return f"https://{FEISHU_DOC_HOST}/docx/{doc_id}"

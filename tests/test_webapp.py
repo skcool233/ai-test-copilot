@@ -47,8 +47,9 @@ class _FakeCopilot:
 
 
 @pytest.fixture
-def client(monkeypatch):
+def client(monkeypatch, tmp_path):
     monkeypatch.setattr(webapp, "Copilot", _FakeCopilot)
+    monkeypatch.setenv("HISTORY_FILE", str(tmp_path / "h.jsonl"))  # 别污染真实 home
     return TestClient(webapp.app)
 
 
@@ -150,6 +151,41 @@ def test_to_pytest_endpoint(client):
 def test_to_pytest_bad_plan(client):
     r = client.post("/api/to-pytest", json={"feature": "x"})  # 缺 test_cases
     assert r.status_code == 400
+
+
+def test_history_records_generate(client):
+    # 生成后历史里应能查到，且能取回完整结果
+    client.post("/api/generate", json={"text": "登录功能"})
+    metas = client.get("/api/history").json()
+    assert len(metas) == 1 and metas[0]["mode"] == "generate"
+    full = client.get(f"/api/history/{metas[0]['id']}").json()
+    assert full["result"]["test_cases"][0]["id"] == "TC-001"
+
+
+def test_history_item_404(client):
+    assert client.get("/api/history/nope").status_code == 404
+
+
+def test_feishu_export(client, monkeypatch):
+    monkeypatch.setattr(webapp, "create_doc_from_plan", lambda plan: "https://x.feishu.cn/docx/NEW")
+    plan = {
+        "feature": "登录",
+        "summary": "s",
+        "test_cases": [
+            {
+                "id": "TC-001",
+                "title": "t",
+                "type": "functional",
+                "priority": "P0",
+                "preconditions": [],
+                "steps": ["s"],
+                "expected_result": "r",
+            }
+        ],
+    }
+    r = client.post("/api/feishu/export", json=plan)
+    assert r.status_code == 200
+    assert r.json()["url"].endswith("/docx/NEW")
 
 
 def test_module_reimport_smoke():

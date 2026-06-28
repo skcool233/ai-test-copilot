@@ -71,3 +71,30 @@ def test_expired_refresh_token_reports(cfg):
     assert feishu.is_authorized() is False
     with pytest.raises(FeishuError):
         feishu._user_token()
+
+
+def test_plan_blocks_structure():
+    from ai_test_copilot.models import CaseType, Priority, TestCase, TestPlan
+
+    plan = TestPlan(
+        feature="登录",
+        summary="s",
+        test_cases=[
+            TestCase(
+                id="TC-001",
+                title="成功",
+                type=CaseType.functional,
+                priority=Priority.P0,
+                preconditions=["已注册"],
+                steps=["输入", "提交"],
+                expected_result="跳首页",
+            )
+        ],
+    )
+    blocks = feishu._plan_blocks(plan)
+    assert blocks[0]["block_type"] == 3  # heading1 = feature
+    assert "heading1" in blocks[0]
+    # 含步骤/预期文本块
+    flat = str(blocks)
+    assert "步骤：输入 → 提交" in flat
+    assert "预期：跳首页" in flat
