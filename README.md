@@ -30,7 +30,7 @@ pip install -e .
 # 配置模型服务（OpenAI 兼容）。也可复制 .env.example 为 .env 填写。
 export LLM_API_KEY=sk-xxxx
 export LLM_BASE_URL=https://api.siliconflow.cn/v1
-export LLM_MODEL=deepseek-ai/DeepSeek-V3
+export LLM_MODEL=deepseek-ai/DeepSeek-V4-Pro
 ```
 
 ## 用法
@@ -71,7 +71,7 @@ cat examples/sample_failure.log | ai-test-copilot analyze -
 pip install -e ".[web]"
 export LLM_API_KEY=sk-xxxx
 export LLM_BASE_URL=https://api.siliconflow.cn/v1
-export LLM_MODEL=deepseek-ai/DeepSeek-V3
+export LLM_MODEL=deepseek-ai/DeepSeek-V4-Pro
 # 可选：设置访问密码，保护按量计费的 API key 不被滥用
 export APP_PASSWORD=your-pass
 uvicorn ai_test_copilot.webapp:app --host 0.0.0.0 --port 8000
@@ -96,7 +96,7 @@ uvicorn ai_test_copilot.webapp:app --host 0.0.0.0 --port 8000
 sudo tee /etc/ai-test-copilot.env >/dev/null <<'EOF'
 LLM_API_KEY=sk-xxxx
 LLM_BASE_URL=https://api.siliconflow.cn/v1
-LLM_MODEL=deepseek-ai/DeepSeek-V3
+LLM_MODEL=deepseek-ai/DeepSeek-V4-Pro
 APP_PASSWORD=your-pass
 PORT=8000
 EOF

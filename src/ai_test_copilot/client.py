@@ -20,7 +20,7 @@ from .models import FailureAnalysis, TestPlan
 
 # 默认指向硅基流动；都可用环境变量覆盖。
 DEFAULT_BASE_URL = os.environ.get("LLM_BASE_URL", "https://api.siliconflow.cn/v1")
-DEFAULT_MODEL = os.environ.get("LLM_MODEL", "deepseek-ai/DeepSeek-V3")
+DEFAULT_MODEL = os.environ.get("LLM_MODEL", "deepseek-ai/DeepSeek-V4-Pro")
 TEMPERATURE = 0.3
 MAX_TOKENS = 8000
 
