@@ -26,7 +26,7 @@
   .seg button{background:transparent;color:var(--dim);border:none;padding:8px 18px;cursor:pointer;font-size:14px}
   .seg button.on{background:var(--accent);color:#fff}
   .feishu{display:flex;gap:8px;margin:14px 0 12px}
-  .feishu input,.feishu textarea{flex:1;background:var(--bg2);color:var(--fg);border:1px solid var(--line2);border-radius:9px;padding:9px 12px;font-size:14px;font-family:inherit;resize:vertical}
+  .feishu input,.feishu textarea{flex:1;background:var(--bg2);color:var(--fg);border:1px solid var(--line2);border-radius:9px;padding:9px 12px;font-size:14px;font-family:inherit;resize:vertical;min-height:62px}
   .feishu input::placeholder,.feishu textarea::placeholder{color:#6b7488}
   button.ghost{background:var(--bg2);color:var(--fg);border:1px solid var(--line2);border-radius:9px;padding:9px 14px;cursor:pointer;white-space:nowrap}
   button.ghost:hover{border-color:var(--accent)}
@@ -138,11 +138,13 @@ function refreshStatus(){
       urlBox.disabled = fetchBtn.disabled = true; login.style.display="none";
       urlBox.placeholder = "飞书未配置（服务器需设 FEISHU_APP_ID/SECRET）";
     }else if(!d.feishu_authorized){
-      urlBox.disabled = false; fetchBtn.disabled = true; login.style.display="";
-      urlBox.placeholder = "先点「登录飞书」授权一次，再粘贴文档链接…";
+      urlBox.disabled = false; fetchBtn.disabled = true;
+      login.style.display=""; login.textContent="🔑 登录飞书";
+      urlBox.placeholder = "先点「登录飞书」授权一次，再粘贴链接…";
     }else{
-      urlBox.disabled = fetchBtn.disabled = false; login.style.display="none";
-      urlBox.placeholder = "粘贴飞书文档链接（/docx/ 或 /wiki/）自动拉取正文…";
+      urlBox.disabled = fetchBtn.disabled = false;
+      login.style.display=""; login.textContent="🔄 重新授权";
+      urlBox.placeholder = "粘贴飞书链接（文档/docx · 知识库/wiki · 多维表格/base），可多行批量…";
     }
   }).catch(()=>{ $("status-line").textContent="无法连接后端"; });
 }
